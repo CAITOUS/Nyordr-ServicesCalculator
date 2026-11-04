@@ -1,0 +1,14 @@
+{
+  "name": "nyordr-services-calculator",
+  "private": true,
+  "description": "Build tooling for Nyordr — Services Calculator. Embeds the libraries into the single-file app.",
+  "scripts": {
+    "build": "node tools/build.mjs"
+  },
+  "devDependencies": {
+    "chart.js": "4.4.1",
+    "jspdf": "2.5.1",
+    "jspdf-autotable": "3.8.2",
+    "xlsx": "0.18.5"
+  }
+}

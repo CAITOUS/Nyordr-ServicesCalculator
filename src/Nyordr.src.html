@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nyordr — Services Calculator</title>
+<meta name="description" content="Model the full-term cost of a contracted services agreement: base, per-endpoint, true-ups, price ramps, helpdesk and inflation.">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+:root{
+  --bg:#f5f6f8;--panel:#fff;--ink:#16191f;--muted:#5d6573;--line:#e2e5ea;--accent:#1f5eff;--accent-soft:#e8eeff;
+  --c1:#1f5eff;--c2:#16a394;--c3:#e8833a;--c4:#9b6bd6;--c5:#d94f8a;--c6:#0e9bd8;--c7:#c9a227;--neg:#c2410c;--ov:#fff4d6;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1115;--panel:#171a21;--ink:#e8eaee;--muted:#9aa3b2;--line:#2a2f3a;--accent:#6e95ff;--accent-soft:#1d2640;
+  --c1:#6e95ff;--c2:#33c2b2;--c3:#f19a55;--c4:#b48cec;--c5:#ef7fb0;--c6:#4cc3f0;--c7:#e0bd4a;--neg:#fb923c;--ov:#3a3016;}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+header{padding:20px 24px 8px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between}
+h1{font-size:20px;margin:0;font-weight:700;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:13px;margin-top:4px}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+button,.filebtn{font:inherit;font-size:13px;font-weight:500;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:8px 12px;border-radius:8px;cursor:pointer}
+button.primary,.filebtn{background:var(--accent);color:#fff;border-color:var(--accent)}
+button:hover,.filebtn:hover{filter:brightness(1.05)}
+.filebtn input{display:none}
+main{display:grid;grid-template-columns:360px 1fr;gap:16px;padding:12px 24px 32px}
+@media (max-width:1050px){main{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+fieldset{border:none;padding:0;margin:0 0 18px}
+legend{font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+label.chk{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-size:13px}
+input,select{font:inherit;font-size:13px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:7px 8px;width:100%}
+input[type=checkbox]{width:auto}
+input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+.full{grid-column:1/-1}
+.hint{font-size:11.5px;color:var(--muted);line-height:1.45;margin:6px 0 0}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.kpi .l{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.kpi .v{font-size:20px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums}
+.kpi .s{font-size:11.5px;color:var(--muted);margin-top:2px}
+.chartwrap{height:300px;position:relative}
+.tablewrap{overflow:auto;max-height:620px;margin-top:16px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{position:sticky;top:0;background:var(--panel);font-weight:600;color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;z-index:1}
+td.l,th.l{text-align:left}
+td input{width:84px;padding:4px 6px;text-align:right;font-size:12.5px}
+td input.note{width:140px;text-align:left}
+td input.ov{background:var(--ov)}
+tr.tu td{background:var(--accent-soft)}
+tfoot td{font-weight:700;position:sticky;bottom:0;background:var(--panel)}
+.neg{color:var(--neg)}
+.mono{font-family:ui-monospace,SFMono-Regular,Consolas,'Liberation Mono',monospace}
+.status{font-size:12.5px;margin-top:8px;color:var(--muted);min-height:18px}
+.status.err{color:var(--neg)}
+details{margin-top:10px}
+summary{cursor:pointer;font-size:12.5px;color:var(--accent);font-weight:500}
+pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:11.5px;overflow:auto;white-space:pre}
+textarea{width:100%;height:160px;font-family:ui-monospace,SFMono-Regular,Consolas,'Liberation Mono',monospace;font-size:11.5px;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px}
+.legendrow{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:4px 0 10px}
+.legendrow span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px;background:var(--sw)}
+.toolbar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:16px}
+.nohd .hd{display:none}
+.h1sub{font-weight:500;color:var(--muted)}
+.updbar,.dsbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--accent);border-radius:10px;font-size:13.5px;margin:4px 24px 0;background:var(--panel)}
+.dsbar{border-style:dashed}
+.updbar .sp,.dsbar .sp,.appfoot .sp{flex:1}
+.updbar a.btnlink{background:var(--accent);color:#fff;text-decoration:none;font-weight:500;font-size:13px;padding:7px 12px;border-radius:7px}
+.appfoot{display:grid;gap:6px;border-top:1px solid var(--line);padding:14px 24px 28px;font-size:12.5px;color:var(--muted)}
+.appfoot .row{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}
+.appfoot a,.about a{color:var(--accent)}
+.about p{font-size:13.5px;line-height:1.5;margin:8px 0}
+.about .notice{font-size:12px;color:var(--muted)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 14px;border-radius:8px;font-size:13px;z-index:60;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.norp .rp{display:none}
+.m-amt .rpPctF,.m-pct .rpAmtF{display:none}
+.modal{position:fixed;inset:0;background:rgba(10,14,24,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:16px}
+.modal.open{display:flex}
+.dialog{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;width:min(460px,100%);box-shadow:0 20px 50px rgba(0,0,0,.3)}
+.dialog h3{margin:0 0 4px;font-size:16px}
+.dialog .grid2{margin-top:12px}
+.dialog textarea{height:84px;font-family:inherit;font-size:13px}
+.dialog .row{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.toolbar h2{font-size:14px;margin:0}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Nyordr <span class="h1sub">— Services Calculator</span></h1>
+    <div class="sub">Model the full-term cost of a contracted services agreement: base fee, per-endpoint rate, true-ups, price ramps, helpdesk and inflation.</div>
+  </div>
+  <div class="actions">
+    <label class="filebtn">Upload CSV / Excel<input type="file" id="file" accept=".csv,.xlsx,.xls,.tsv,.txt"></label>
+    <button id="pdfBtn" class="primary">Executive PDF</button>
+    <button id="copyCsv">Export CSV</button>
+    <button id="newContract">Start new contract</button>
+  </div>
+</header>
+<div class="updbar" id="updBar" hidden></div>
+<div class="dsbar" id="dsBar" hidden><span><b>Sample data.</b> The figures below are illustrative so you can look around. Your inputs are saved in this browser only.</span><span class="sp"></span><button id="newContract2" class="primary">Start new contract</button></div>
+<main>
+<aside class="panel" id="settings">
+  <fieldset>
+    <legend>Contract</legend>
+    <div class="grid2">
+      <label class="full">Contract / client name<input id="name" type="text" value="Managed Endpoint Services"></label>
+      <label>Start date<input id="start" type="date" value="2027-01-01"></label>
+      <label>Interval<select id="unit"><option value="month">Monthly</option><option value="quarter">Quarterly</option><option value="year">Annual</option></select></label>
+      <label>Number of intervals (n)<input id="n" type="number" min="1" max="600" value="36"></label>
+      <label>One-time onboarding ($)<input id="onboard" type="number" step="any" value="2500"></label>
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Rates (per interval)</legend>
+    <div class="grid2">
+      <label>Base rate ($)<input id="base" type="number" step="any" value="1500"></label>
+      <label>Rate per EP ($)<input id="epRate" type="number" step="any" value="12"></label>
+      <label>Starting EP count<input id="epStart" type="number" step="1" value="100"></label>
+      <label>Discount on recurring (%)<input id="disc" type="number" step="any" value="0"></label>
+      <label>EP growth type<select id="growthMode"><option value="pct">% per interval</option><option value="fixed">EPs per interval</option></select></label>
+      <label>EP growth<input id="growth" type="number" step="any" value="1"></label>
+    </div>
+    <p class="hint">Base, EP, true-up, ramp and helpdesk are shown at starting prices; every dollar of escalation is in the Inflation column. EP counts are auto-projected from growth. Override any interval directly in the table (or via upload).</p>
+  </fieldset>
+  <fieldset>
+    <legend>Inflation / escalator</legend>
+    <div class="grid2">
+      <label class="full">Rate per increase (%)<input id="infl" type="number" step="any" value="3"></label>
+      <label>Applies every (months)<input id="inflEvery" type="number" step="1" min="1" value="12"></label>
+      <label>First increase at month<input id="inflFirst" type="number" step="1" min="1" value="13"></label>
+      <label class="full">Inflation applies to<select id="inflMethod">
+        <option value="B">Prior period total (industry standard)</option>
+        <option value="A">Starting price only (ramp never inflated)</option>
+        <option value="C">Current total, after new ramp</option></select></label>
+      <label class="chk"><input id="inflBase" type="checkbox" checked>Escalate base rate</label>
+      <label class="chk"><input id="inflEP" type="checkbox" checked>Escalate EP rate</label>
+    </div>
+    <p class="hint">Inflation runs on its own schedule. Ramp steps never trigger it. Example: $10k/yr, +$5k ramp every 6 months, 3% yearly from month 13:<br>
+    &bull; <b>Prior period total:</b> mo 1–6 $10k, mo 7–12 $15k, mo 13: $15k × 1.03 + $5k = <b>$20,450</b><br>
+    &bull; <b>Starting price only:</b> mo 13: $10k × 1.03 + $10k = <b>$20,300</b><br>
+    &bull; <b>Current total:</b> mo 13: ($15k + $5k) × 1.03 = <b>$20,600</b><br>
+    Rows with an inflation increase are marked ▲.</p>
+  </fieldset>
+  <fieldset>
+    <legend>Billing &amp; true-up</legend>
+    <div class="grid2">
+      <label class="full">EP billing method<select id="billing">
+        <option value="commit">Bill committed EPs, true-up periodically</option>
+        <option value="actual">Bill actual EPs every interval (no true-up)</option></select></label>
+      <label>Committed EPs<input id="commit" type="number" step="1" value="100"></label>
+      <label>True-up every (months)<input id="tuMonths" type="number" step="1" min="1" value="12"></label>
+      <label>True-up premium (%)<input id="tuPrem" type="number" step="any" value="0"></label>
+      <label>True-up admin fee ($)<input id="tuFee" type="number" step="any" value="0"></label>
+      <label class="chk full"><input id="reset" type="checkbox" checked>Reset commitment to actual EPs after true-up</label>
+      <label class="chk full"><input id="trueDown" type="checkbox">Allow true-down (credit under-use, lower commitment)</label>
+    </div>
+    <p class="hint">Between true-ups you're billed the commitment. Overage (actual − committed) × that interval's EP rate accrues and is billed at the true-up, plus premium. A final true-up always runs in the last interval.</p>
+  </fieldset>
+  <fieldset>
+    <legend>Price ramp</legend>
+    <div class="grid2">
+      <label class="chk full"><input id="rpOn" type="checkbox">Include price ramp</label>
+      <label class="full">Ramp method<select id="rpMethod"><option value="amt">Fixed $ increase per step</option><option value="pct">% increase per step</option></select></label>
+      <label class="rpAmtF">Increase per step ($)<input id="rpAmt" type="number" step="any" value="5000"></label>
+      <label class="rpAmtF">Increase is to price per<select id="rpPer"><option value="year" selected>Year (annual price)</option><option value="month">Month</option></select></label>
+      <label class="rpPctF">Increase per step (%)<input id="rpPct" type="number" step="any" value="5"></label>
+      <label class="rpPctF">Applies to<select id="rpScope"><option value="baseep">Base + EP charges</option><option value="base">Base rate only</option><option value="all">All recurring (incl. helpdesk)</option></select></label>
+      <label class="chk full rpPctF"><input id="rpCompound" type="checkbox" checked>Compound steps (each % applies on the prior ramped price)</label>
+      <label>Number of steps<input id="rpSteps" type="number" step="1" min="1" value="3"></label>
+      <label>Step every (months)<input id="rpEvery" type="number" step="1" min="1" value="6"></label>
+      <label>First step at month<input id="rpStart" type="number" step="1" min="1" value="7"></label>
+    </div>
+    <p class="hint" id="rpHint">Each step adds the amount on top of the prior steps and stays for the rest of the term. Month 1 is the contract start; a step that lands mid-interval is prorated. How ramp increases interact with inflation is set under Inflation.</p>
+  </fieldset>
+  <fieldset>
+    <legend>Helpdesk services</legend>
+    <div class="grid2">
+      <label class="chk full"><input id="hdOn" type="checkbox" checked>Include helpdesk</label>
+      <label>Hours quoted per<select id="hdPeriod"><option value="month">Month</option><option value="year">Year</option></select></label>
+      <label>Hours growth (%/yr)<input id="hdGrowth" type="number" step="any" value="0"></label>
+      <label>Remote hours<input id="hdRemHrs" type="number" step="any" value="10"></label>
+      <label>Remote rate ($/hr)<input id="hdRemRate" type="number" step="any" value="95"></label>
+      <label>Onsite hours<input id="hdOnHrs" type="number" step="any" value="4"></label>
+      <label>Onsite rate ($/hr)<input id="hdOnRate" type="number" step="any" value="135"></label>
+      <label>Onsite visits<input id="hdVisits" type="number" step="any" value="1"></label>
+      <label>Trip fee per visit ($)<input id="hdTrip" type="number" step="any" value="50"></label>
+      <label class="chk full"><input id="hdInfl" type="checkbox" checked>Escalate helpdesk rates with inflation</label>
+      <label class="chk full"><input id="hdDisc" type="checkbox">Apply recurring discount to helpdesk</label>
+    </div>
+    <p class="hint">Hours, visits and trip fees are per month or per year (as selected) and are scaled to the contract interval. Override remote/onsite hours for any interval in the table or via upload (remote_hours, onsite_hours columns).</p>
+  </fieldset>
+  <fieldset style="margin-bottom:0">
+    <legend>Upload format</legend>
+    <p class="hint" style="margin-top:0">CSV or Excel. A <b>Schedule</b> table (interval, endpoints, other_cost, note) sets per-interval EPs and extra costs. A <b>Settings</b> table (setting, value) sets any field above. An Excel file can hold both as separate sheets.</p>
+    <details><summary>Schedule template</summary><pre id="tplSched"></pre></details>
+    <details><summary>Settings template</summary><pre id="tplSet"></pre></details>
+    <div class="status" id="status"></div>
+  </fieldset>
+</aside>
+
+<section>
+  <div class="kpis" id="kpis"></div>
+  <div class="panel">
+    <div class="toolbar" style="margin-top:0"><h2>Cost per interval</h2>
+      <div class="legendrow">
+        <span style="--sw:var(--c1)">Base</span><span style="--sw:var(--c2)">EP</span><span style="--sw:var(--c3)">True-up</span><span style="--sw:var(--c6)" class="rp">Ramp</span><span style="--sw:var(--c5)" class="hd">Helpdesk</span><span style="--sw:var(--c7)">Inflation</span><span style="--sw:var(--c4)">Other / one-time</span><span style="--sw:var(--muted)">Cumulative (line)</span>
+      </div></div>
+    <div class="chartwrap"><canvas id="chart"></canvas></div>
+  </div>
+  <div class="toolbar"><h2>Interval schedule</h2>
+    <button id="clearOv">Clear hour/EP overrides</button></div>
+  <div class="tablewrap">
+    <table id="tbl">
+      <thead><tr>
+        <th class="l">#</th><th class="l">Period</th><th>Escalator</th><th>Base</th><th>Actual EPs</th><th>Billed EPs</th><th>Current EP rate</th><th>EP cost</th><th>True-up</th><th class="rp">Ramp</th><th class="hd">Remote hrs</th><th class="hd">Onsite hrs</th><th class="hd">Helpdesk</th><th>Inflation</th><th>Other ($)</th><th>Discount</th><th>Total</th><th>Cumulative</th><th class="l">Note</th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+      <tfoot id="tfoot"></tfoot>
+    </table>
+  </div>
+  <div id="copyFallback" style="display:none;margin-top:12px"><p class="hint">Clipboard was blocked. Select all and copy:</p><textarea id="copyText" readonly></textarea></div>
+</section>
+</main>
+<footer class="appfoot" id="appFoot"></footer>
+<div class="modal" id="aboutModal"><div class="dialog about" role="dialog" aria-labelledby="aboutTitle" id="aboutBody"></div></div>
+<div class="toast" id="toast" hidden></div>
+
+<div class="modal" id="pdfModal"><div class="dialog" role="dialog" aria-labelledby="pdfTitle">
+  <h3 id="pdfTitle">Executive PDF</h3>
+  <div class="hint" style="margin:0">Summary page with key figures, annual cost chart, annual breakdown and assumptions.</div>
+  <div class="grid2">
+    <label class="full">Prepared for<input id="pdfFor" type="text"></label>
+    <label class="full">Prepared by<input id="pdfBy" type="text" placeholder="e.g. CAITO"></label>
+    <label class="full">Executive summary (optional; leave blank to auto-write)<textarea id="pdfSummary"></textarea></label>
+    <label class="chk full"><input id="pdfSched" type="checkbox" checked>Append full interval schedule</label>
+  </div>
+  <div class="status" id="pdfStatus"></div>
+  <div class="row"><button id="pdfCancel">Cancel</button><button id="pdfGo" class="primary">Download PDF</button></div>
+</div></div>
+
+<script>
+/* =========================================================
+   NYORDR — app identity, license notice, update check
+   ========================================================= */
+const NYORDR = { name:'Nyordr — Services Calculator', version:"1.0.0", released:"2026-11-03", author:'Triston Hughes', year:'2026',
+  linkedin:'https://www.linkedin.com/in/triston-hughes-949420242/', portfolio:'https://triston-hughes.vercel.app/',
+  repo:'https://github.com/CAITOUS/Nyordr-ServicesCalculator', pages:'caitous.github.io',
+  /* Raw URL of nyordr.json in the repo you publish from. Set to "" to turn update checks off. */
+  manifestUrl:"https://raw.githubusercontent.com/CAITOUS/Nyordr-ServicesCalculator/main/nyordr.json" };
+const NOTICE = `© ${NYORDR.year} ${NYORDR.author}. All rights reserved. Nyordr is the intellectual property of ${NYORDR.author}, provided for personal, educational, and internal organizational use. Not for resale, sublicensing, or distribution by value-added resellers (VARs). Projections you create with Nyordr belong to you.`;
+const HOSTED = location.hostname === NYORDR.pages; // the GitHub Pages copy is always current
+const STORE_KEY = 'nyordr-v1', LEGACY_KEY = 'cslc';
+let DS = 'sample';
+const $=id=>document.getElementById(id);
+const FIELDS=['name','start','unit','n','onboard','base','epRate','epStart','disc','growthMode','growth','infl','inflEvery','inflFirst','inflMethod','inflBase','inflEP','billing','commit','tuMonths','tuPrem','tuFee','reset','trueDown','hdOn','hdPeriod','hdGrowth','hdRemHrs','hdRemRate','hdOnHrs','hdOnRate','hdVisits','hdTrip','hdInfl','hdDisc','rpOn','rpAmt','rpPer','rpSteps','rpEvery','rpStart','rpMethod','rpPct','rpScope','rpCompound'];
+const DEFAULTS={};
+FIELDS.forEach(f=>{const e=$(f);DEFAULTS[f]=e.type==='checkbox'?e.checked:e.value});
+let S={ep:[],other:[],note:[],rh:[],oh:[]};
+const MPI={month:1,quarter:3,year:12};
+const money=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0});
+const money2=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2});
+const fmt=v=>money.format(Math.round(v)).replace('-$','−$');
+const fmt2=v=>money2.format(v);
+const num=id=>{const v=parseFloat($(id).value);return isFinite(v)?v:0};
+
+function cfg(){return{
+  name:$('name').value,start:$('start').value||'2027-01-01',unit:$('unit').value,
+  n:Math.max(1,Math.min(600,Math.round(num('n'))||1)),
+  base:num('base'),epRate:num('epRate'),epStart:num('epStart'),growthMode:$('growthMode').value,growth:num('growth'),
+  infl:num('infl')/100,inflEvery:Math.max(1,Math.round(num('inflEvery'))||12),inflFirst:Math.max(1,Math.round(num('inflFirst'))||13),inflMethod:$('inflMethod').value,inflBase:$('inflBase').checked,inflEP:$('inflEP').checked,
+  billing:$('billing').value,commit:num('commit'),tuMonths:num('tuMonths')||12,tuPrem:num('tuPrem')/100,tuFee:num('tuFee'),
+  reset:$('reset').checked,trueDown:$('trueDown').checked,onboard:num('onboard'),disc:num('disc')/100,
+  hdOn:$('hdOn').checked,hdPeriod:$('hdPeriod').value,hdGrowth:num('hdGrowth')/100,hdRemHrs:num('hdRemHrs'),hdRemRate:num('hdRemRate'),
+  hdOnHrs:num('hdOnHrs'),hdOnRate:num('hdOnRate'),hdVisits:num('hdVisits'),hdTrip:num('hdTrip'),hdInfl:$('hdInfl').checked,hdDisc:$('hdDisc').checked,
+  rpOn:$('rpOn').checked,rpAmt:num('rpAmt'),rpPer:$('rpPer').value,rpSteps:Math.max(0,Math.round(num('rpSteps'))),rpEvery:Math.max(1,Math.round(num('rpEvery'))||1),
+  rpStart:Math.max(1,Math.round(num('rpStart'))||1),
+  rpMethod:$('rpMethod').value,rpPct:num('rpPct')/100,rpScope:$('rpScope').value,rpCompound:$('rpCompound').checked}}
+
+function autoEP(c,i){
+  if(c.growthMode==='pct')return Math.max(0,Math.round(c.epStart*Math.pow(1+c.growth/100,i)));
+  return Math.max(0,Math.round(c.epStart+c.growth*i));
+}
+function periodLabel(c,i){
+  const [y,m]=c.start.split('-').map(Number);
+  const mm=(m-1)+i*MPI[c.unit];const d=new Date(y+Math.floor(mm/12),mm%12,1);
+  if(c.unit==='year')return 'Yr '+(i+1)+' ('+d.getFullYear()+')';
+  if(c.unit==='quarter')return 'Q'+(Math.floor(d.getMonth()/3)+1)+' '+d.getFullYear();
+  return d.toLocaleString('en-US',{month:'short',year:'numeric'});
+}
+
+function compute(c){
+  const mpi=MPI[c.unit];const k=Math.max(1,Math.round(c.tuMonths/mpi));
+  let commit=c.commit>0?c.commit:c.epStart,pending=0,pendingR=0,cum=0;const rows=[];
+  // Inflation events on their own schedule: months inflFirst, inflFirst+inflEvery, ...
+  const E=m=>m<c.inflFirst?0:Math.floor((m-c.inflFirst)/c.inflEvery)+1;
+  const F=m=>Math.pow(1+c.infl,E(m));
+  // Inflation applied to a ramp increment that took effect in month s, as of month m
+  const G=(s,m)=>c.inflMethod==='A'?1:Math.pow(1+c.infl,E(m)-(c.inflMethod==='B'?E(s):E(s-1)));
+  const rampMonths=[];if(c.rpOn)for(let j=0;j<c.rpSteps;j++)rampMonths.push(c.rpStart+j*c.rpEvery);
+  for(let i=0;i<c.n;i++){
+    const yrs=Math.floor(i*mpi/12);
+    const m0=i*mpi+1,m1=(i+1)*mpi;
+    let f=0,isInfl=false;
+    for(let m=m0;m<=m1;m++){f+=F(m)/mpi;if(m>=c.inflFirst&&(m-c.inflFirst)%c.inflEvery===0)isInfl=true}
+    const base=c.base*(c.inflBase?f:1);
+    const rate=c.epRate*(c.inflEP?f:1);
+    const auto=autoEP(c,i);
+    const ep=S.ep[i]!=null?S.ep[i]:auto;
+    let billed,tu=0,tuR=0,isTU=false;
+    if(c.billing==='actual'){billed=ep}
+    else{
+      billed=commit;
+      const diff=ep-commit;
+      if(diff>0){pending+=diff*rate*(1+c.tuPrem);pendingR+=diff*c.epRate*(1+c.tuPrem)}
+      else if(diff<0&&c.trueDown){pending+=diff*rate;pendingR+=diff*c.epRate}
+      if((i+1)%k===0||i===c.n-1){
+        isTU=true;tu=pending+c.tuFee;tuR=pendingR+c.tuFee;pending=0;pendingR=0;
+        if(c.reset)commit=c.trueDown?ep:Math.max(commit,ep);
+      }
+    }
+    const epCost=billed*rate;
+    // Helpdesk: per-period quantities scaled to this interval
+    let rhAuto=0,ohAuto=0,rh=0,oh=0,hd=0,hdRemote=0,hdOnsite=0;
+    if(c.hdOn){
+      const scale=c.hdPeriod==='month'?mpi:mpi/12;
+      const g=Math.pow(1+c.hdGrowth,yrs);
+      const hf=c.hdInfl?f:1;
+      rhAuto=+(c.hdRemHrs*scale*g).toFixed(2);ohAuto=+(c.hdOnHrs*scale*g).toFixed(2);
+      rh=S.rh[i]!=null?S.rh[i]:rhAuto;oh=S.oh[i]!=null?S.oh[i]:ohAuto;
+      const visits=c.hdVisits*scale*(ohAuto?oh/ohAuto:(oh>0?1:0));
+      hdRemote=rh*c.hdRemRate*hf;hdOnsite=oh*c.hdOnRate*hf+visits*c.hdTrip*hf;hd=hdRemote+hdOnsite;
+    }
+    // Price ramp: cumulative steps, evaluated month by month (prorates mid-interval steps)
+    const calcRamp=(F,G,f)=>{let ramp=0;
+    if(rampMonths.length){
+      if(c.rpMethod==='pct'){
+        // Pieces of the ramp scope at starting (pre-inflation) prices, per interval
+        const hdRaw=hd/((c.hdOn&&c.hdInfl)?f:1);
+        const pieces=[{a:c.base,esc:c.inflBase}];
+        if(c.rpScope!=='base')pieces.push({a:billed*c.epRate,esc:c.inflEP});
+        if(c.rpScope==='all'&&c.hdOn)pieces.push({a:hdRaw,esc:c.hdInfl});
+        for(let m=m0;m<=m1;m++){
+          const live=rampMonths.filter(s=>s<=m);if(!live.length)continue;
+          if(c.rpCompound){
+            const up=Math.pow(1+c.rpPct,live.length)-1;
+            // A: % of starting price; B/C: % of the inflated price (order of a same-day ramp+inflation does not matter when compounding)
+            pieces.forEach(p=>{ramp+=p.a*up*((c.inflMethod!=='A'&&p.esc)?F(m):1)/mpi});
+          }else{
+            live.forEach(sm=>pieces.forEach(p=>{ramp+=p.a*c.rpPct*(p.esc?G(sm,m):1)/mpi}));
+          }
+        }
+      }else{
+        const perMonth=c.rpPer==='month'?c.rpAmt:c.rpAmt/12;
+        for(let m=m0;m<=m1;m++)rampMonths.forEach(sm=>{if(sm<=m)ramp+=perMonth*G(sm,m)});
+      }
+    }
+    return ramp;};
+    const ramp=calcRamp(F,G,f);
+    const rampR=calcRamp(()=>1,()=>1,1);
+    const recurring=base+epCost+tu+ramp;
+    const disc=recurring*c.disc+(c.hdDisc?hd*c.disc:0);
+    const other=(S.other[i]||0)+(i===0?c.onboard:0);
+    const total=recurring+hd-disc+other;cum+=total;
+    // Split every charge into its starting-price amount + inflation
+    const hdF=(c.hdOn&&c.hdInfl)?f:1;
+    const R={base:c.base,epCost:billed*c.epRate,tu:tuR,ramp:rampR,hdRemote:hdRemote/hdF,hdOnsite:hdOnsite/hdF};R.hd=R.hdRemote+R.hdOnsite;
+    const inflHd=hd-R.hd,infl=(base-R.base)+(epCost-R.epCost)+(tu-R.tu)+(ramp-R.ramp)+inflHd;
+    rows.push({i,label:periodLabel(c,i),f,isInfl,auto,ep,billed,rate,isTU,rhAuto,ohAuto,rh,oh,other,disc,total,cum,
+      base:R.base,epCost:R.epCost,tu:R.tu,ramp:R.ramp,hd:R.hd,hdRemote:R.hdRemote,hdOnsite:R.hdOnsite,infl,inflHd,tuI:tu});
+  }
+  return rows;
+}
+
+let builtN=-1;
+function buildTable(n){
+  const tb=$('tbody');tb.innerHTML='';
+  for(let i=0;i<n;i++){
+    const tr=document.createElement('tr');tr.id='r'+i;
+    tr.innerHTML=`<td class="l">${i+1}</td><td class="l" data-k="label"></td><td data-k="f"></td><td data-k="base"></td>
+    <td><input type="number" step="1" data-i="${i}" data-t="ep"></td><td data-k="billed"></td><td data-k="rate"></td><td data-k="epCost"></td>
+    <td data-k="tu"></td><td class="rp" data-k="ramp"></td><td class="hd"><input type="number" step="any" data-i="${i}" data-t="rh"></td><td class="hd"><input type="number" step="any" data-i="${i}" data-t="oh"></td><td class="hd" data-k="hd"></td><td data-k="infl"></td><td><input type="number" step="any" data-i="${i}" data-t="other"></td><td data-k="disc"></td>
+    <td data-k="total" style="font-weight:600"></td><td data-k="cum"></td><td class="l"><input class="note" type="text" data-i="${i}" data-t="note"></td>`;
+    tb.appendChild(tr);
+  }
+  tb.querySelectorAll('input').forEach(inp=>{
+    const i=+inp.dataset.i,t=inp.dataset.t;
+    if(t==='ep'&&S.ep[i]!=null)inp.value=S.ep[i];
+    if(t==='other'&&S.other[i])inp.value=S.other[i];
+    if(t==='note'&&S.note[i])inp.value=S.note[i];
+    if((t==='rh'||t==='oh')&&S[t][i]!=null)inp.value=S[t][i];
+    inp.addEventListener('input',()=>{
+      const v=inp.value.trim();
+      if(t==='note')S.note[i]=v;
+      else if(t==='ep'||t==='rh'||t==='oh')S[t][i]=v===''?null:Math.max(0,parseFloat(v)||0);
+      else S.other[i]=v===''?0:(parseFloat(v)||0);
+      recalc(false);
+    });
+  });
+  builtN=n;
+}
+
+let chart;
+function recalc(rebuild=true){
+  const c=cfg();
+  if(rebuild||builtN!==c.n)buildTable(c.n);
+  const rows=compute(c);
+  $('tbl').classList.toggle('nohd',!c.hdOn);document.querySelector('.legendrow').classList.toggle('nohd',!c.hdOn);
+  $('tbl').classList.toggle('norp',!c.rpOn);$('settings').classList.toggle('m-pct',c.rpMethod==='pct');$('settings').classList.toggle('m-amt',c.rpMethod!=='pct');document.querySelector('.legendrow').classList.toggle('norp',!c.rpOn);
+  const tot={infl:0,ramp:0,base:0,epCost:0,tu:0,other:0,disc:0,total:0,epMonths:0,hd:0,rh:0,oh:0,hdRemote:0,hdOnsite:0};
+  rows.forEach(r=>{
+    const tr=$('r'+r.i);tr.classList.toggle('tu',r.isTU&&c.billing==='commit');
+    const set=(k,v)=>{const td=tr.querySelector(`[data-k="${k}"]`);td.textContent=v;return td};
+    set('label',r.label);set('f',(r.isInfl?'▲ ':'')+r.f.toFixed(4));set('base',fmt(r.base));set('billed',r.billed.toLocaleString());
+    set('rate',fmt2(r.rate));set('epCost',fmt(r.epCost));
+    const tutd=set('tu',r.isTU&&c.billing==='commit'?fmt(r.tu):'—');tutd.classList.toggle('neg',r.tu<0);
+    set('disc',r.disc?'−'+fmt(r.disc):'—');set('total',fmt(r.total));set('cum',fmt(r.cum));
+    const epIn=tr.querySelector('input[data-t="ep"]');epIn.placeholder=r.auto;epIn.classList.toggle('ov',S.ep[r.i]!=null);
+    set('hd',fmt(r.hd));set('infl',r.infl?fmt(r.infl):'—');tot.infl+=r.infl;set('ramp',r.ramp?fmt(r.ramp):'—');tot.ramp+=r.ramp;
+    const rhIn=tr.querySelector('input[data-t="rh"]'),ohIn=tr.querySelector('input[data-t="oh"]');
+    rhIn.placeholder=r.rhAuto;ohIn.placeholder=r.ohAuto;rhIn.classList.toggle('ov',S.rh[r.i]!=null);ohIn.classList.toggle('ov',S.oh[r.i]!=null);
+    tot.hd+=r.hd;tot.rh+=r.rh;tot.oh+=r.oh;tot.hdRemote+=r.hdRemote;tot.hdOnsite+=r.hdOnsite;
+    tot.base+=r.base;tot.epCost+=r.epCost;tot.tu+=r.tu;tot.other+=r.other;tot.disc+=r.disc;tot.total+=r.total;tot.epMonths+=r.ep*MPI[c.unit];
+  });
+  $('tfoot').innerHTML=`<tr><td class="l" colspan="3">Total</td><td>${fmt(tot.base)}</td><td></td><td></td><td></td><td>${fmt(tot.epCost)}</td>
+   <td class="${tot.tu<0?'neg':''}">${fmt(tot.tu)}</td><td class="rp">${fmt(tot.ramp)}</td><td class="hd">${tot.rh.toLocaleString(undefined,{maximumFractionDigits:1})}</td><td class="hd">${tot.oh.toLocaleString(undefined,{maximumFractionDigits:1})}</td><td class="hd">${fmt(tot.hd)}</td><td>${fmt(tot.infl)}</td><td>${fmt(tot.other)}</td><td>${tot.disc?'−'+fmt(tot.disc):'—'}</td><td>${fmt(tot.total)}</td><td></td><td></td></tr>`;
+
+  const months=c.n*MPI[c.unit],years=months/12;
+  const first=rows[0],last=rows[rows.length-1];
+  const run=r=>r.total-r.other-r.tuI*(1-c.disc);const firstRun=run(first),lastRun=run(last);
+  const k=[
+    ['Total contract value',fmt(tot.total),`${c.n} ${c.unit==='month'?'months':c.unit==='quarter'?'quarters':'years'} · ${years.toFixed(years%1?1:0)} yrs`],
+    ['Avg per interval',fmt(tot.total/c.n),'all-in'],
+    ['Annualized cost',fmt(tot.total/years),'TCV ÷ years'],
+    ['Effective $/EP/month',fmt2(tot.epMonths?tot.total/tot.epMonths:0),'all-in ÷ actual EP-months'],
+    ['Inflation total',fmt(tot.infl),`${tot.total?(tot.infl/tot.total*100).toFixed(1):0}% of contract value`],
+    ['True-up total',fmt(tot.tu),c.billing==='commit'?'overage billed at true-ups':'n/a (billed on actual)'],
+    ...(c.rpOn?[['Price ramp total',fmt(tot.ramp),c.rpMethod==='pct'?`${c.rpSteps} × ${+(c.rpPct*100).toFixed(2)}%${c.rpCompound?' compounding':''} every ${c.rpEvery} mo from month ${c.rpStart}`:`${c.rpSteps} × ${fmt(c.rpAmt)}/${c.rpPer==='month'?'mo':'yr'} every ${c.rpEvery} mo from month ${c.rpStart}`]]:[]),
+    ...(c.hdOn?[['Helpdesk total',fmt(tot.hd),`${tot.rh.toFixed(0)} remote hrs (${fmt(tot.hdRemote)}) · ${tot.oh.toFixed(0)} onsite hrs (${fmt(tot.hdOnsite)})`]]:[]),
+    ['Run-rate change',fmt(firstRun)+' → '+fmt(lastRun),'recurring, first vs last interval'],
+  ];
+  $('kpis').innerHTML=k.map(([l,v,s])=>`<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+  drawChart(rows,c);save();
+  window._rows=rows;
+}
+
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()}
+function drawChart(rows,c){
+  if(typeof Chart==='undefined')return;
+  const data={labels:rows.map(r=>r.label),datasets:[
+    {type:'bar',label:'Base',data:rows.map(r=>r.base*(1-c.disc)),backgroundColor:css('--c1'),stack:'s',yAxisID:'y'},
+    {type:'bar',label:'EP',data:rows.map(r=>r.epCost*(1-c.disc)),backgroundColor:css('--c2'),stack:'s',yAxisID:'y'},
+    {type:'bar',label:'True-up',data:rows.map(r=>r.tu*(1-c.disc)),backgroundColor:css('--c3'),stack:'s',yAxisID:'y'},
+    {type:'bar',label:'Ramp',data:rows.map(r=>r.ramp*(1-c.disc)),backgroundColor:css('--c6'),stack:'s',yAxisID:'y',hidden:!c.rpOn},
+    {type:'bar',label:'Helpdesk',data:rows.map(r=>r.hd*(c.hdDisc?1-c.disc:1)),backgroundColor:css('--c5'),stack:'s',yAxisID:'y',hidden:!c.hdOn},
+    {type:'bar',label:'Inflation',data:rows.map(r=>(r.infl-r.inflHd)*(1-c.disc)+r.inflHd*(c.hdDisc?1-c.disc:1)),backgroundColor:css('--c7'),stack:'s',yAxisID:'y'},
+    {type:'bar',label:'Other / one-time',data:rows.map(r=>r.other),backgroundColor:css('--c4'),stack:'s',yAxisID:'y'},
+    {type:'line',label:'Cumulative',data:rows.map(r=>r.cum),borderColor:css('--muted'),borderWidth:2,pointRadius:0,tension:.2,yAxisID:'y2'}]};
+  const grid=css('--line'),tick=css('--muted');
+  const opts={responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:x=>`${x.dataset.label}: ${fmt(x.parsed.y)}`}}},
+    scales:{x:{stacked:true,grid:{display:false},ticks:{color:tick,maxRotation:0,autoSkip:true,maxTicksLimit:12}},
+      y:{stacked:true,grid:{color:grid},ticks:{color:tick,callback:v=>fmt(v)},title:{display:true,text:'Per interval',color:tick}},
+      y2:{position:'right',grid:{display:false},ticks:{color:tick,callback:v=>fmt(v)},title:{display:true,text:'Cumulative',color:tick}}}};
+  if(chart){chart.data=data;chart.options=opts;chart.update();}
+  else chart=new Chart($('chart'),{data,options:opts});
+}
+
+/* ---------- Upload ---------- */
+const KEYMAP={name:'name',contract:'name',client:'name',contractname:'name',start:'start',startdate:'start',
+ unit:'unit',interval:'unit',intervalunit:'unit',n:'n',intervals:'n',term:'n',numberofintervals:'n',
+ base:'base',baserate:'base',eprate:'epRate',rateperep:'epRate',perep:'epRate',epstart:'epStart',startingeps:'epStart',startingepcount:'epStart',endpoints:'epStart',
+ growthmode:'growthMode',growthtype:'growthMode',growth:'growth',epgrowth:'growth',
+ inflation:'infl',inflationrate:'infl',escalator:'infl',infl:'infl',inflationevery:'inflEvery',inflationeverymonths:'inflEvery',inflationfrequency:'inflEvery',inflationfirstmonth:'inflFirst',inflationstart:'inflFirst',firstinflationmonth:'inflFirst',inflationmethod:'inflMethod',inflationappliesto:'inflMethod',
+ escalatebase:'inflBase',inflbase:'inflBase',escalateep:'inflEP',inflep:'inflEP',
+ billing:'billing',billingmethod:'billing',commit:'commit',committedeps:'commit',commitment:'commit',
+ trueupmonths:'tuMonths',trueupevery:'tuMonths',trueupfrequency:'tuMonths',trueuppremium:'tuPrem',trueupfee:'tuFee',trueupadminfee:'tuFee',
+ truedown:'trueDown',allowtruedown:'trueDown',reset:'reset',resetcommitment:'reset',onboarding:'onboard',onetime:'onboard',onboard:'onboard',discount:'disc',disc:'disc',
+ helpdesk:'hdOn',includehelpdesk:'hdOn',helpdeskperiod:'hdPeriod',hdperiod:'hdPeriod',helpdeskhoursper:'hdPeriod',
+ helpdeskgrowth:'hdGrowth',hoursgrowth:'hdGrowth',remotehours:'hdRemHrs',remoterate:'hdRemRate',onsitehours:'hdOnHrs',onsiterate:'hdOnRate',
+ onsitevisits:'hdVisits',visits:'hdVisits',tripfee:'hdTrip',escalatehelpdesk:'hdInfl',helpdeskdiscount:'hdDisc',
+ ramp:'rpOn',priceramp:'rpOn',includeramp:'rpOn',rampamount:'rpAmt',rampincrease:'rpAmt',rampper:'rpPer',rampperiod:'rpPer',
+ rampsteps:'rpSteps',rampevery:'rpEvery',rampeverymonths:'rpEvery',rampstart:'rpStart',rampstartmonth:'rpStart',firststepmonth:'rpStart',
+  rampmethod:'rpMethod',ramptype:'rpMethod',ramppercent:'rpPct',ramppct:'rpPct',rampscope:'rpScope',rampappliesto:'rpScope',rampcompound:'rpCompound',compoundramp:'rpCompound'};
+const norm=s=>String(s??'').toLowerCase().replace(/[^a-z0-9]/g,'');
+function setField(id,v){
+  const e=$(id);if(!e)return false;
+  if(e.type==='checkbox'){e.checked=/^(1|true|yes|y|on)$/i.test(String(v).trim());return true}
+  let s=String(v).trim();
+  if(id==='unit'){const t=norm(s);s=t.startsWith('m')?'month':t.startsWith('q')?'quarter':'year'}
+  if(id==='growthMode')s=/%|pct|percent/i.test(s)?'pct':'fixed';
+  if(id==='inflMethod'){const t=norm(s);s=t==='a'||t.startsWith('start')||t.includes('baseonly')?'A':t==='c'||t.includes('current')||t.includes('post')||t.includes('after')?'C':'B'}
+  if(id==='rpMethod')s=/%|pct|percent/i.test(s)?'pct':'amt';
+  if(id==='rpScope'){const t=norm(s);s=t.startsWith('all')?'all':(t==='base'||t==='baseonly'||t==='baserate')?'base':'baseep'}
+  if(id==='rpPer')s=/^y|annual/i.test(s)?'year':'month';
+  if(id==='hdPeriod')s=/^y|annual/i.test(s)?'year':'month';
+  if(id==='billing')s=/actual/i.test(s)?'actual':'commit';
+  if(id==='start'&&typeof v==='number'){const d=new Date(Math.round((v-25569)*864e5));s=d.toISOString().slice(0,10)}
+  if(e.type==='number')s=String(parseFloat(String(s).replace(/[$,%\s]/g,''))||0);
+  e.value=s;return true;
+}
+function processTable(rows){
+  rows=rows.filter(r=>r&&r.some(x=>String(x??'').trim()!==''));
+  if(!rows.length)return{kind:null};
+  const h=rows[0].map(norm);
+  const isSettings=(h.includes('setting')||h.includes('parameter')||h.includes('key')||h.includes('field'))&&h.includes('value');
+  if(isSettings){
+    const ki=h.findIndex(x=>['setting','parameter','key','field'].includes(x)),vi=h.indexOf('value');let n=0;
+    rows.slice(1).forEach(r=>{const id=KEYMAP[norm(r[ki])];if(id&&r[vi]!==undefined&&setField(id,r[vi]))n++});
+    return{kind:'settings',count:n};
+  }
+  const find=(...names)=>h.findIndex(x=>names.includes(x));
+  const ii=find('interval','period','month','n','#','index'),ei=find('endpoints','ep','eps','epcount','actualeps','devices','endpointcount','count'),
+        oi=find('other','othercost','onetime','adjustment','additional','extra','othercosts'),ni=find('note','notes','comment');
+  const rhi=find('remotehours','remotehrs','remote'),ohi=find('onsitehours','onsitehrs','onsite');
+  if(ei<0&&oi<0&&rhi<0&&ohi<0)return{kind:null};
+  let max=0,n=0;
+  rows.slice(1).forEach((r,idx)=>{
+    let i=ii>=0?parseInt(r[ii]):idx+1;if(!isFinite(i)||i<1)return;i--;max=Math.max(max,i+1);
+    if(ei>=0&&String(r[ei]??'').trim()!==''){S.ep[i]=Math.max(0,parseFloat(String(r[ei]).replace(/,/g,''))||0)}
+    if(oi>=0&&String(r[oi]??'').trim()!==''){S.other[i]=parseFloat(String(r[oi]).replace(/[$,]/g,''))||0}
+    if(rhi>=0&&String(r[rhi]??'').trim()!=='')S.rh[i]=Math.max(0,parseFloat(r[rhi])||0);
+    if(ohi>=0&&String(r[ohi]??'').trim()!=='')S.oh[i]=Math.max(0,parseFloat(r[ohi])||0);
+    if(ni>=0&&r[ni])S.note[i]=String(r[ni]);n++;
+  });
+  return{kind:'schedule',count:n,max};
+}
+function simpleCSV(text){
+  const out=[];const d=text.includes('\t')&&!text.includes(',')?'\t':',';
+  text.split(/\r?\n/).forEach(line=>{const r=[];let cur='',q=false;
+    for(const ch of line){if(ch==='"'){q=!q}else if(ch===d&&!q){r.push(cur);cur=''}else cur+=ch}
+    r.push(cur);out.push(r)});
+  return out;
+}
+$('file').addEventListener('change',async ev=>{
+  const f=ev.target.files[0];if(!f)return;const st=$('status');st.className='status';
+  try{
+    let tables=[];
+    if(/\.(xlsx|xls)$/i.test(f.name)){
+      if(typeof XLSX==='undefined')throw new Error('Excel reader is missing from this file; save as CSV and retry.');
+      const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});
+      tables=wb.SheetNames.map(s=>XLSX.utils.sheet_to_json(wb.Sheets[s],{header:1,raw:true,defval:''}));
+    }else tables=[simpleCSV(await f.text())];
+    // settings first so n is set, then schedule
+    const res=tables.map(t=>({t,h:(t[0]||[]).map(norm)}));
+    const msgs=[];let maxN=0;
+    res.sort((a,b)=>(b.h.includes('value')?1:0)-(a.h.includes('value')?1:0)).forEach(({t})=>{
+      const r=processTable(t);
+      if(r.kind==='settings')msgs.push(`${r.count} settings`);
+      if(r.kind==='schedule'){msgs.push(`${r.count} schedule rows`);maxN=Math.max(maxN,r.max)}
+    });
+    if(!msgs.length)throw new Error('No recognizable Settings or Schedule table. See templates below.');
+    if(maxN>num('n'))$('n').value=maxN;
+    DS='client';renderDs();recalc(true);
+    st.textContent=`Loaded ${f.name}: ${msgs.join(', ')}.`;
+  }catch(e){st.className='status err';st.textContent=e.message}
+  ev.target.value='';
+});
+
+/* ---------- Templates, copy, persistence ---------- */
+$('tplSched').textContent=`interval,endpoints,remote_hours,onsite_hours,other_cost,note
+1,100,10,4,0,Go-live
+2,105,14,0,0,
+3,110,8,6,750,Added site license
+...`;
+$('tplSet').textContent=`setting,value
+name,Acme Co - Managed Services
+start_date,2027-01-01
+interval_unit,month
+intervals,36
+base_rate,1500
+rate_per_ep,12
+starting_eps,100
+growth_mode,%
+growth,1
+inflation,3
+inflation_every_months,12
+inflation_first_month,13
+inflation_method,prior
+escalate_base,yes
+escalate_ep,yes
+billing,commit
+committed_eps,100
+trueup_months,12
+trueup_premium,0
+trueup_fee,0
+reset_commitment,yes
+allow_truedown,no
+onboarding,2500
+discount,0
+helpdesk,yes
+helpdesk_period,month
+helpdesk_growth,0
+remote_hours,10
+remote_rate,95
+onsite_hours,4
+onsite_rate,135
+onsite_visits,1
+trip_fee,50
+escalate_helpdesk,yes
+helpdesk_discount,no
+ramp,yes
+ramp_method,$
+ramp_amount,5000
+ramp_per,month
+ramp_steps,3
+ramp_every_months,6
+ramp_start_month,7
+ramp_percent,5
+ramp_scope,base+ep
+ramp_compound,yes`;
+
+$('copyCsv').addEventListener('click',async()=>{
+  const c=cfg(),rows=window._rows||[];
+  const head='interval,period,escalator,base,actual_eps,billed_eps,ep_rate,ep_cost,true_up,ramp,remote_hrs,onsite_hrs,helpdesk_remote,helpdesk_onsite,helpdesk,inflation,other,discount,total,cumulative,note';
+  const body=rows.map(r=>[r.i+1,`"${r.label}"`,r.f.toFixed(4),r.base.toFixed(2),r.ep,r.billed,r.rate.toFixed(4),r.epCost.toFixed(2),r.tu.toFixed(2),r.ramp.toFixed(2),r.rh,r.oh,r.hdRemote.toFixed(2),r.hdOnsite.toFixed(2),r.hd.toFixed(2),r.infl.toFixed(2),r.other.toFixed(2),r.disc.toFixed(2),r.total.toFixed(2),r.cum.toFixed(2),`"${(S.note[r.i]||'').replace(/"/g,'""')}"`].join(','));
+  const text=[`# ${c.name}`,head,...body].join('\n');
+  if(DL||!inClaude()){try{await offerFile(slugify(c.name)+'-schedule.csv',text);return}catch(e){if(e&&e.code==='declined')return}}
+  try{await navigator.clipboard.writeText(text);$('copyCsv').textContent='Copied to clipboard ✓';setTimeout(()=>$('copyCsv').textContent='Export CSV',1500);$('copyFallback').style.display='none'}
+  catch{$('copyFallback').style.display='block';$('copyText').value=text;$('copyText').select()}
+});
+$('clearOv').addEventListener('click',()=>{S.ep=[];S.rh=[];S.oh=[];recalc(true)});
+function applyDefaults(){FIELDS.forEach(f=>{const e=$(f);if(e.type==='checkbox')e.checked=DEFAULTS[f];else e.value=DEFAULTS[f]});S={ep:[],other:[],note:[],rh:[],oh:[]};$('status').textContent=''}
+function newContract(){
+  applyDefaults();
+  // Keep sensible defaults (term, inflation, true-up rules); clear the sample's prices and quantities
+    Object.entries({name:'',base:0,epRate:0,epStart:0,commit:0,onboard:0,growth:0,disc:0}).forEach(([k,v])=>$(k).value=v);
+  $('hdOn').checked=false;$('rpOn').checked=false;commitTouched=false;
+  DS='client';renderDs();recalc(true);toast('New contract started. Enter the contract name and rates to begin');$('name').focus();
+}
+function loadSample(){applyDefaults();commitTouched=false;DS='sample';renderDs();recalc(true);toast('Sample data loaded')}
+function renderDs(){$('dsBar').hidden=DS!=='sample'}
+$('newContract').addEventListener('click',newContract);$('newContract2').addEventListener('click',newContract);
+FIELDS.forEach(f=>{$(f).addEventListener('input',()=>recalc(false));$(f).addEventListener('change',()=>recalc(false))});
+// Committed EPs follows starting EPs until the user edits it
+let commitTouched=false;$('commit').addEventListener('input',()=>commitTouched=true);
+$('epStart').addEventListener('input',()=>{if(!commitTouched){$('commit').value=$('epStart').value;recalc(false)}});
+
+/* ---------- Downloads + Executive PDF ---------- */
+let DL=null;
+(async()=>{try{if(window.claude&&window.claude.use)DL=await window.claude.use('downloads')}catch{DL=null}})();
+const slugify=t=>(t||'contract').replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase()||'contract';
+// claude.ai provides a save prompt; anywhere else (local file, your own site) use a normal browser download
+const inClaude=()=>!!(window.claude&&window.claude.use);
+async function offerFile(filename,data){
+  if(DL)return DL.save({filename,data});
+  if(inClaude())throw{code:'unavailable'};
+  const blob=data instanceof Blob?data:new Blob([data],{type:filename.endsWith('.csv')?'text/csv':'application/octet-stream'});
+  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);
+  return{status:'saved'};
+}
+const dlMsg=e=>({declined:'Download cancelled.',rate_limited:'Another download prompt is open; try again in a moment.',
+  unavailable:'Downloads are not available in this view. Open the calculator on claude.ai to download.'}[e&&e.code]||'Download unavailable here ('+((e&&e.code)||'error')+').');
+
+function rampDesc(c,P){
+  const scope={base:'base rate',baseep:'base + EP charges',all:'all recurring charges'}[c.rpScope];
+  const what=c.rpMethod==='pct'?`${+(c.rpPct*100).toFixed(2)}% ${c.rpCompound?'compounding ':''}increase to ${scope}`:`${P(c.rpAmt)} increase to the ${c.rpPer==='year'?'annual':'monthly'} price`;
+  return `${c.rpSteps} step${c.rpSteps>1?'s':''} of ${what}, every ${c.rpEvery} months from month ${c.rpStart}`;
+}
+function inflDesc(c){
+  const how={A:'applied to starting prices only (ramp increases are not inflated)',B:"applied to the prior period's total, before any same-day ramp increase",C:'applied to the current total, after any same-day ramp increase'}[c.inflMethod];
+  return `${+(c.infl*100).toFixed(2)}% every ${c.inflEvery} months starting month ${c.inflFirst}, ${how}`;
+}
+function buildPDF(o){
+  const {jsPDF}=window.jspdf;const c=cfg(),rows=window._rows,mpi=MPI[c.unit];
+  const doc=new jsPDF({unit:'pt',format:'letter'});const W=612,H=792,M=40,CW=W-2*M;
+  const P=v=>(v<-0.5?'-':'')+'$'+Math.round(Math.abs(v)).toLocaleString('en-US');
+  const P2=v=>(v<0?'-':'')+'$'+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const INK=[22,25,31],MUT=[93,101,115],LINE=[226,229,234],NAVY=[15,27,61],SOFT=[245,247,251];
+  const unitW={month:'months',quarter:'quarters',year:'years'}[c.unit],unit1={month:'month',quarter:'quarter',year:'year'}[c.unit];
+  const T=rows.reduce((a,r)=>{a.infl+=r.infl;a.inflHd+=r.inflHd;a.ramp+=r.ramp;a.base+=r.base;a.ep+=r.epCost;a.tu+=r.tu;a.hd+=r.hd;a.other+=r.other;a.disc+=r.disc;a.total+=r.total;a.epm+=r.ep*mpi;a.rh+=r.rh;a.oh+=r.oh;return a},
+    {infl:0,inflHd:0,ramp:0,base:0,ep:0,tu:0,hd:0,other:0,disc:0,total:0,epm:0,rh:0,oh:0});
+  const years=c.n*mpi/12,first=rows[0],last=rows[rows.length-1];
+  const run=r=>r.total-r.other-r.tuI*(1-c.disc);
+  const nd=1-c.disc,hdF=c.hdDisc?nd:1;
+  // contract-year rollup
+  const Y=[];rows.forEach(r=>{const k=Math.floor(r.i*mpi/12);const y=Y[k]||(Y[k]={y:k+1,from:r.label,to:r.label,infl:0,inflHd:0,ramp:0,base:0,ep:0,tu:0,hd:0,other:0,disc:0,total:0,eps:0,n:0,cum:0});
+    y.to=r.label;y.infl+=r.infl;y.inflHd+=r.inflHd;y.ramp+=r.ramp;y.base+=r.base;y.ep+=r.epCost;y.tu+=r.tu;y.hd+=r.hd;y.other+=r.other;y.disc+=r.disc;y.total+=r.total;y.eps+=r.ep;y.n++;y.cum=r.cum;});
+  const today=new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+
+  // Header band
+  doc.setFillColor(...NAVY);doc.rect(0,0,W,100,'F');
+  doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(21);doc.text('Contract Cost Projection',M,46);
+  doc.setFont('helvetica','normal');doc.setFontSize(12);doc.text(o.forName||c.name||'Contract',M,67);
+  doc.setFontSize(9);doc.setTextColor(196,205,228);
+  doc.text(`${first.label} to ${last.label}   |   ${c.n} ${unitW} (${+years.toFixed(1)} yrs)   |   Prepared ${today}${o.by?'   |   '+o.by:''}`,M,86);
+  let y=124;
+
+  // KPI tiles
+  const tiles=[['Total contract value',P(T.total)],['Annualized cost',P(T.total/years)],[`Avg per ${unit1}`,P(T.total/c.n)],['Effective $ / EP / month',P2(T.epm?T.total/T.epm:0)],
+    [`Recurring per ${unit1}`,`${P(run(first))} > ${P(run(last))}`],['Inflation total',P(T.infl)],
+    ...(c.rpOn?[['Price ramp total',P(T.ramp)]]:[]),...(c.hdOn?[['Helpdesk total',P(T.hd)]]:[]),
+    ...(c.billing==='commit'?[['True-up total',P(T.tu)]]:[]),['One-time & other',P(T.other)]].slice(0,8);
+  const tw=(CW-30)/4,th=50;
+  tiles.forEach(([l,v],k)=>{const x=M+(k%4)*(tw+10),yy=y+Math.floor(k/4)*(th+10);
+    doc.setFillColor(...SOFT);doc.setDrawColor(...LINE);doc.roundedRect(x,yy,tw,th,5,5,'FD');
+    doc.setFontSize(7.5);doc.setTextColor(...MUT);doc.text(l.toUpperCase(),x+10,yy+17);
+    doc.setFont('helvetica','bold');doc.setTextColor(...INK);doc.setFontSize(v.length>16?10.5:14);doc.text(v,x+10,yy+38);doc.setFont('helvetica','normal');});
+  y+=2*th+10+24;
+
+  // Executive summary
+  const growth=last.ep-first.ep;
+  const auto=`Over ${+years.toFixed(1)} years, this contract is projected to cost ${P(T.total)} in total, about ${P(T.total/years)} per year. `+
+    `Recurring cost moves from ${P(run(first))} to ${P(run(last))} per ${unit1}, driven by inflation${c.rpOn?', the price ramp':''}`+
+    (growth?` and endpoint growth from ${first.ep.toLocaleString()} to ${last.ep.toLocaleString()}`:'')+'. '+
+    (c.billing==='commit'?`Endpoints are billed at the committed count with true-ups every ${c.tuMonths} months, totaling ${P(T.tu)}. `:'Endpoints are billed on actual count each interval. ')+
+    (c.rpOn?`A price ramp of ${rampDesc(c,P)} contributes ${P(T.ramp)} before inflation. `:'')+
+    `Inflation adds ${P(T.infl)} across all charges (${inflDesc(c)}). `+(c.hdOn?`Helpdesk accounts for ${P(T.hd)} (${Math.round(T.rh).toLocaleString()} remote and ${Math.round(T.oh).toLocaleString()} onsite hours).`:'');
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...INK);doc.text('Executive summary',M,y);y+=14;
+  doc.setFont('helvetica','normal');doc.setFontSize(9.5);doc.setTextColor(...INK);
+  const lines=doc.splitTextToSize((o.summary||auto).trim(),CW);doc.text(lines,M,y);y+=lines.length*12.5+16;
+
+  // Annual stacked chart (vector)
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text('Cost by contract year',M,y);y+=10;
+  const series=[['Base',[31,94,255],v=>v.base*nd],['Endpoints',[22,163,148],v=>v.ep*nd],['True-up',[232,131,58],v=>Math.max(0,v.tu*nd)],
+    ...(c.rpOn?[['Ramp',[14,155,216],v=>v.ramp*nd]]:[]),
+    ...(c.hdOn?[['Helpdesk',[217,79,138],v=>v.hd*hdF]]:[]),['Inflation',[201,162,39],v=>Math.max(0,(v.infl-v.inflHd)*nd+v.inflHd*hdF)],['Other / one-time',[155,107,214],v=>v.other]];
+  let lx=M;doc.setFont('helvetica','normal');doc.setFontSize(8);
+  series.forEach(([n,col])=>{doc.setFillColor(...col);doc.rect(lx,y+4,8,8,'F');doc.setTextColor(...MUT);doc.text(n,lx+12,y+11);lx+=doc.getTextWidth(n)+28});
+  y+=22;
+  const ch=150,ax=M+46,aw=CW-46;
+  const maxV=Math.max(1,...Y.map(v=>series.reduce((s,[, ,f])=>s+f(v),0)));
+  const step=Math.pow(10,Math.floor(Math.log10(maxV/4)));const nice=[1,2,2.5,5,10].map(m=>m*step).find(t=>maxV/t<=5)||step*10;const top=Math.ceil(maxV/nice)*nice;
+  doc.setDrawColor(...LINE);doc.setLineWidth(.5);doc.setFontSize(7.5);
+  for(let g=0;g<=top/nice;g++){const gy=y+ch-(g*nice/top)*ch;doc.line(ax,gy,ax+aw,gy);doc.setTextColor(...MUT);doc.text(P(g*nice),ax-6,gy+2.5,{align:'right'})}
+  const slot=aw/Y.length,bw=Math.min(60,slot*.6);
+  Y.forEach((v,k)=>{let base=y+ch;const bx=ax+k*slot+(slot-bw)/2;
+    series.forEach(([, col,f])=>{const h=f(v)/top*ch;if(h>0){doc.setFillColor(...col);doc.rect(bx,base-h,bw,h,'F');base-=h}});
+    doc.setTextColor(...INK);doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.text(P(v.total),bx+bw/2,base-4,{align:'center'});
+    doc.setFont('helvetica','normal');doc.setTextColor(...MUT);doc.text('Year '+v.y,bx+bw/2,y+ch+11,{align:'center'});});
+  y+=ch+26;
+
+  // Annual table
+  const head=['Year','Period','Avg EPs','Base','Endpoints','True-up',...(c.rpOn?['Ramp']:[]),...(c.hdOn?['Helpdesk']:[]),'Inflation','Other','Discount','Total','Cumulative'];
+  const body=Y.map(v=>[v.y,`${v.from} - ${v.to}`,Math.round(v.eps/v.n).toLocaleString(),P(v.base),P(v.ep),P(v.tu),...(c.rpOn?[P(v.ramp)]:[]),...(c.hdOn?[P(v.hd)]:[]),P(v.infl),P(v.other),v.disc?'-'+P(v.disc):'-',P(v.total),P(v.cum)]);
+  const foot=['Total','','',P(T.base),P(T.ep),P(T.tu),...(c.rpOn?[P(T.ramp)]:[]),...(c.hdOn?[P(T.hd)]:[]),P(T.infl),P(T.other),T.disc?'-'+P(T.disc):'-',P(T.total),''];
+  const tStyle={theme:'plain',margin:{left:M,right:M,bottom:50},styles:{fontSize:7.8,cellPadding:{top:4,bottom:4,left:4,right:4},textColor:INK,lineColor:LINE},
+    headStyles:{fillColor:NAVY,textColor:255,fontStyle:'bold',fontSize:7.5},footStyles:{fillColor:SOFT,fontStyle:'bold',textColor:INK},
+    alternateRowStyles:{fillColor:[250,251,253]},didParseCell:d=>{if(d.column.index>=2)d.cell.styles.halign='right'}};
+  doc.autoTable({...tStyle,startY:y,head:[head],body,foot:[foot],showFoot:'lastPage',columnStyles:{1:{minCellWidth:100}}});
+  y=doc.lastAutoTable.finalY+24;
+
+  // Assumptions
+  const A=[['Term',`${c.n} ${unitW} from ${first.label}`],['Base rate',`${P2(c.base)} per ${unit1}`],
+    ['Rate per EP',`${P2(c.epRate)} per ${unit1}`],['Endpoints',`${c.epStart.toLocaleString()} start; growth ${c.growth}${c.growthMode==='pct'?'% per '+unit1:' per '+unit1}`],
+    ['Inflation',`${inflDesc(c)}; escalates ${[c.inflBase&&'base',c.inflEP&&'EP rate',c.hdOn&&c.hdInfl&&'helpdesk'].filter(Boolean).join(', ')||'nothing'}`],
+    ['EP billing',c.billing==='commit'?`Committed ${(c.commit||c.epStart).toLocaleString()} EPs; true-up every ${c.tuMonths} mo${c.tuPrem?', +'+(c.tuPrem*100)+'% premium':''}${c.tuFee?', '+P2(c.tuFee)+' fee':''}${c.trueDown?'; true-down allowed':''}`:'Actual EP count each interval'],
+    ...(c.rpOn?[['Price ramp',rampDesc(c,P2)]]:[]),
+    ...(c.hdOn?[['Helpdesk',`Per ${c.hdPeriod}: ${c.hdRemHrs} remote hrs @ ${P2(c.hdRemRate)}, ${c.hdOnHrs} onsite hrs @ ${P2(c.hdOnRate)}, ${c.hdVisits} visit(s) @ ${P2(c.hdTrip)}${c.hdGrowth?'; hours +'+(c.hdGrowth*100)+'%/yr':''}`]]:[]),
+    ['One-time',`${P2(c.onboard)} onboarding${T.other-c.onboard>0.5?' + '+P(T.other-c.onboard)+' scheduled other costs':''}`],
+    ['Discount',c.disc?`${(c.disc*100).toFixed(1)}% on recurring${c.hdOn?(c.hdDisc?' incl. helpdesk':' excl. helpdesk'):''}`:'None']];
+  const ov=S.ep.filter(v=>v!=null).length+S.rh.filter(v=>v!=null).length+S.oh.filter(v=>v!=null).length;
+  if(ov)A.push(['Overrides',`${ov} per-interval EP/hour values entered manually or uploaded`]);
+  if(y>H-150){doc.addPage();y=60}
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...INK);doc.text('Key assumptions',M,y);y+=6;
+  doc.autoTable({theme:'plain',startY:y,margin:{left:M,right:M,bottom:50},body:A,styles:{fontSize:8.2,cellPadding:{top:3,bottom:3,left:0,right:6},textColor:INK},
+    columnStyles:{0:{fontStyle:'bold',cellWidth:90,textColor:MUT}}});
+
+  // Full schedule
+  if(o.sched){
+    doc.addPage('letter','landscape');
+    doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(...INK);doc.text('Interval schedule',M,48);
+    const sh=['#','Period','Escalator','Base','Actual EPs','Billed EPs','Cur. EP rate','EP cost','True-up',...(c.rpOn?['Ramp']:[]),...(c.hdOn?['Remote hrs','Onsite hrs','Helpdesk']:[]),'Inflation','Other','Discount','Total','Cumulative','Note'];
+    const sb=rows.map(r=>[r.i+1,r.label,(r.isInfl?'* ':'')+r.f.toFixed(4),P(r.base),r.ep.toLocaleString(),r.billed.toLocaleString(),P2(r.rate),P(r.epCost),r.isTU&&c.billing==='commit'?P(r.tu):'-',...(c.rpOn?[P(r.ramp)]:[]),
+      ...(c.hdOn?[+r.rh.toFixed(2),+r.oh.toFixed(2),P(r.hd)]:[]),P(r.infl),P(r.other),r.disc?'-'+P(r.disc):'-',P(r.total),P(r.cum),S.note[r.i]||'']);
+    doc.autoTable({...tStyle,startY:60,head:[sh],body:sb,styles:{...tStyle.styles,fontSize:7,cellPadding:3},
+      didParseCell:d=>{if(d.column.index>=2&&d.column.index<sh.length-1)d.cell.styles.halign='right';
+        if(d.section==='body'&&rows[d.row.index]&&rows[d.row.index].isTU&&c.billing==='commit')d.cell.styles.fillColor=[232,238,255]}});
+  }
+  // Footer
+  const pages=doc.getNumberOfPages();
+  for(let k=1;k<=pages;k++){doc.setPage(k);const pw=doc.internal.pageSize.getWidth(),ph=doc.internal.pageSize.getHeight();
+    doc.setDrawColor(...LINE);doc.line(M,ph-34,pw-M,ph-34);doc.setFontSize(7.5);doc.setTextColor(...MUT);doc.setFont('helvetica','normal');
+    doc.text('Projection based on the stated assumptions; actual invoiced amounts may vary.',M,ph-22);
+    doc.setFontSize(6.5);doc.text(`Generated with ${NYORDR.name.replace('—','-')} v${NYORDR.version}  |  (c) ${NYORDR.year} ${NYORDR.author}`,M,ph-13);doc.setFontSize(7.5);
+    doc.text(`Page ${k} of ${pages}`,pw-M,ph-22,{align:'right'});}
+  return doc;
+}
+const modal=$('pdfModal');
+$('pdfBtn').addEventListener('click',()=>{if(!$('pdfFor').value)$('pdfFor').value=$('name').value;$('pdfStatus').textContent='';$('pdfStatus').className='status';modal.classList.add('open')});
+$('pdfCancel').addEventListener('click',()=>modal.classList.remove('open'));
+modal.addEventListener('click',e=>{if(e.target===modal)modal.classList.remove('open')});
+$('pdfGo').addEventListener('click',async()=>{
+  const st=$('pdfStatus');st.className='status';
+  if(!window.jspdf||!window.jspdf.jsPDF){st.className='status err';st.textContent='PDF library is missing from this file.';return}
+  try{
+    st.textContent='Building PDF…';
+    const doc=buildPDF({forName:$('pdfFor').value.trim(),by:$('pdfBy').value.trim(),summary:$('pdfSummary').value,sched:$('pdfSched').checked});
+    window._lastPdf=doc;
+    await offerFile(slugify($('pdfFor').value||$('name').value)+'-cost-projection.pdf',doc.output('blob'));
+    st.textContent='PDF saved.';setTimeout(()=>modal.classList.remove('open'),900);
+  }catch(e){st.className='status err';st.textContent=e&&e.code?dlMsg(e):('Could not build PDF: '+(e&&e.message||e))}
+});
+
+function save(){try{const o={S,DS};FIELDS.forEach(f=>{const e=$(f);o[f]=e.type==='checkbox'?e.checked:e.value});localStorage.setItem(STORE_KEY,JSON.stringify(o))}catch{}}
+function load(){try{const o=JSON.parse(localStorage.getItem(STORE_KEY)||localStorage.getItem(LEGACY_KEY)||'null');if(!o)return;DS=o.DS||'client';FIELDS.forEach(f=>{if(o[f]!==undefined){const e=$(f);if(e.type==='checkbox')e.checked=o[f];else e.value=o[f]}});if(o.S)S={ep:o.S.ep||[],other:o.S.other||[],note:o.S.note||[],rh:o.S.rh||[],oh:o.S.oh||[]};commitTouched=true}catch{}}
+/* ---------- Footer, About, updates ---------- */
+const esc=t=>String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let toastT;function toast(m){const t=$('toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,2600)}
+const authorLinks=()=>`Built by <b>${esc(NYORDR.author)}</b> · <a href="${NYORDR.linkedin}" target="_blank" rel="noopener">LinkedIn</a> · <a href="${NYORDR.portfolio}" target="_blank" rel="noopener">Portfolio Toolbox</a>`;
+function renderFoot(){
+  $('appFoot').innerHTML=`<div class="row"><span><b>Nyordr</b> v${NYORDR.version}</span><span>${authorLinks()}</span><span class="sp"></span><a href="#" id="loadSample">Load sample data</a><a href="#" id="openAbout">About &amp; license</a></div><span>${esc(NOTICE)}</span>`;
+  $('openAbout').addEventListener('click',e=>{e.preventDefault();openAbout()});
+  $('loadSample').addEventListener('click',e=>{e.preventDefault();loadSample()});
+}
+function openAbout(){
+  $('aboutBody').innerHTML=`<h3 id="aboutTitle">About &amp; license</h3>
+    <p><b>${esc(NYORDR.name)}</b> · version ${NYORDR.version} · released ${NYORDR.released}</p>
+    <p>Models what a contracted services agreement really costs across its whole term (base fees, per-endpoint charges, true-ups, price ramps, helpdesk hours and inflation) and turns it into an executive PDF. Named for Njörðr, the Norse god of the sea, wealth and fair passage: it keeps the long voyage of a contract on course.</p>
+    <p>${authorLinks()}</p>
+    <p><a href="${NYORDR.repo}" target="_blank" rel="noopener">Source &amp; downloads on GitHub</a> · <a href="${NYORDR.repo}/blob/main/LICENSE.md" target="_blank" rel="noopener">Full license</a></p>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button id="checkUpd">Check for updates</button><span class="hint" style="margin:0">${!NYORDR.manifestUrl?"Update checks aren't set up in this copy.":HOSTED?'The hosted version is always current.':'This copy checks for a newer version each time it opens (when online).'}</span></div>
+    <p class="notice">${esc(NOTICE)}</p>
+    <p class="notice">Projections are planning estimates based on the assumptions entered; actual invoiced amounts may vary.</p>
+    <div class="row"><button id="aboutClose" class="primary">Close</button></div>`;
+  $('aboutModal').classList.add('open');
+  $('aboutClose').addEventListener('click',()=>$('aboutModal').classList.remove('open'));
+  $('checkUpd').addEventListener('click',()=>checkUpdates(true));
+}
+$('aboutModal').addEventListener('click',e=>{if(e.target===$('aboutModal'))$('aboutModal').classList.remove('open')});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.modal.open').forEach(m=>m.classList.remove('open'))});
+function semverCmp(a,b){const p=x=>String(x||'0').replace(/^v/,'').split(/[.-]/).map(v=>parseInt(v,10)||0);const A=p(a),B=p(b);for(let i=0;i<3;i++){if((A[i]||0)!==(B[i]||0))return(A[i]||0)>(B[i]||0)?1:-1}return 0}
+async function checkUpdates(manual){
+  if(!NYORDR.manifestUrl){if(manual)toast("Update checks aren't set up in this copy");return}
+  if(HOSTED){if(manual)toast("This is the hosted version, so it's always current");return}
+  if(!navigator.onLine){if(manual)toast("You're offline, so updates can't be checked");return}
+  try{
+    let u=NYORDR.manifestUrl,j=null;
+    for(let hop=0;hop<3;hop++){const r=await fetch(u,{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);j=await r.json();if(j.moved_to&&j.moved_to!==u){u=j.moved_to;continue}break}
+    const newer=semverCmp(j.latest,NYORDR.version)>0;
+    let dismissed='';try{dismissed=localStorage.getItem(STORE_KEY+'-upd-dismiss')||''}catch(_){}
+    const bar=$('updBar');
+    if(newer&&(manual||dismissed!==j.latest)){
+      bar.innerHTML=`<span>🆕 <b>Nyordr ${esc(j.latest)}</b> is available. You have ${esc(NYORDR.version)}.${j.notes?' '+esc(j.notes):''}</span><span class="sp"></span>${j.download?`<a class="btnlink" href="${esc(j.download)}" target="_blank" rel="noopener">Get the update</a>`:''}<button type="button" id="updLater">Later</button>`;
+      bar.hidden=false;
+      $('updLater').addEventListener('click',()=>{try{localStorage.setItem(STORE_KEY+'-upd-dismiss',j.latest)}catch(_){}bar.hidden=true});
+    }else if(manual)toast(newer?'Update available':`You're on the latest version (${NYORDR.version})`);
+  }catch(e){if(manual)toast("Couldn't check for updates: "+e.message)}
+}
+load();renderDs();renderFoot();recalc(true);checkUpdates(false);
+</script>
+</body>
+</html>
