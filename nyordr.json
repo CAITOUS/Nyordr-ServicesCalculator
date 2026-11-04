@@ -1,6 +1,6 @@
 {
-  "latest": "1.0.0",
-  "released": "2026-11-03",
+  "latest": "1.1.0",
+  "released": "2026-11-04",
   "download": "https://github.com/CAITOUS/Nyordr-ServicesCalculator/releases/latest",
-  "notes": "First public release."
+  "notes": "Nordic theme with light and dark modes, embedded font, accessibility fixes."
 }
